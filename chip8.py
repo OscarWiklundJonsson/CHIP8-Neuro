@@ -4,84 +4,92 @@ import sys
 import random
 import os
 
-
+# Class to represent a register with a specified number of bits
 class Register:
     def __init__(self, bits):
-        self.value = 0
-        self.bits = bits
+        self.value = 0  # Initial value of the register
+        self.bits = bits  # Number of bits in the register
 
+    # Check for carry condition and adjust register value if overflow occurs
     def checkCarry(self):
-        hexValue = hex(self.value)[2:]
+        hexValue = hex(self.value)[2:]  # Convert value to hexadecimal string
 
+        # Check if the value exceeds the register's bit limit
         if len(hexValue) > self.bits / 4:
+            # Keep only the least significant bits
             self.value = int(hexValue[-int(self.bits / 4):], 16)
-            return 1
+            return 1  # Return carry flag
+        return 0  # No carry occurred
 
-        return 0
-
+    # Check for borrow condition and adjust register value if underflow occurs
     def checkBorrow(self):
         if self.value < 0:
-            self.value = abs(self.value)
-            return 0
+            self.value = abs(self.value)  # Make the value positive
+            return 0  # Borrow occurred
+        return 1  # No borrow occurred
 
-        return 1
-
+    # Read the register value as a hexadecimal string
     def readValue(self):
         return hex(self.value)
 
+    # Set the register value
     def setValue(self, value):
         self.value = value
 
-
+# Class for the delay timer used in the emulator
 class DelayTimer:
     def __init__(self):
-        self.timer = 0
+        self.timer = 0  # Initialize the timer value to 0
 
+    # Decrement the timer by 1, if greater than 0
     def countDown(self):
         if self.timer > 0:
             self.timer -= 1
 
+    # Set the timer value
     def setTimer(self, value):
         self.timer = value
 
+    # Read the current timer value
     def readTimer(self):
         return self.timer
 
-
+# Sound timer class inheriting from DelayTimer
 class SoundTimer(DelayTimer):
     def __init__(self):
         DelayTimer.__init__(self)
 
+    # Emit a beep sound if the timer is greater than 1
     def beep(self):
         if self.timer > 1:
             os.system('play --no-show-progress --null --channels 1 synth %s triangle %f' % (self.timer / 60, 440))
             self.timer = 0
 
-
+# Stack class for managing return addresses
 class Stack:
     def __init__(self):
-        self.stack = []
+        self.stack = []  # Initialize the stack as an empty list
 
+    # Push a value onto the stack
     def push(self, value):
         self.stack.append(value)
 
+    # Pop a value from the stack
     def pop(self):
         return self.stack.pop()
 
+# Constants for emulator
+MEMORY_SIZE = 4096  # Memory size in bytes
+FONTSET_SIZE = 80  # Size of the font set
+FONTSET_START_ADDRESS = 0x200  # Starting address for the program
 
-# TODO: Implement the rest of the opcodes
-
-MEMORY_SIZE = 4096
-FONTSET_SIZE = 80
-FONTSET_START_ADDRESS = 0x200
-
-
+# Main emulator class
 class Emulator:
     def __init__(self):
-        self.Memory = []
-        for i in range(0, 4096):
-            self.Memory.append(0x0)
+        # Initialize memory with 0
+        self.Memory = [0x0] * MEMORY_SIZE
 
+        # Load font set into memory
         fonts = [
             0xF0, 0x90, 0x90, 0x90, 0xF0,  # 0
             0x20, 0x60, 0x20, 0x20, 0x70,  # 1
@@ -98,63 +106,53 @@ class Emulator:
             0xF0, 0x80, 0x80, 0x80, 0xF0,  # C
             0xE0, 0x90, 0x90, 0x90, 0xE0,  # D
             0xF0, 0x80, 0xF0, 0x80, 0xF0,  # E
-            0xF0, 0x80, 0xF0, 0x80, 0x80  # F
+            0xF0, 0x80, 0xF0, 0x80, 0x80   # F
         ]
         for i in range(len(fonts)):
             self.Memory[i] = fonts[i]
 
-        self.Registers = []
-        for i in range(16):
-            self.Registers.append(Register(8))
+        # Initialize 16 8-bit registers
+        self.Registers = [Register(8) for _ in range(16)]
 
+        # Special 16-bit register (I register)
         self.IRegister = Register(16)
-        self.ProgramCounter = 0x200
+        self.ProgramCounter = FONTSET_START_ADDRESS  # Start execution at 0x200
 
+        # Stack for return addresses
         self.stack = Stack()
 
+        # Timers for delay and sound
         self.delayTimer = DelayTimer()
         self.soundTimer = SoundTimer()
+
+        # Initialize Pygame and set timer for 60Hz
         pygame.init()
         pygame.time.set_timer(pygame.USEREVENT + 1, int(1000 / 60))
 
-        self.keys = []
-        for i in range(0, 16):
-            self.keys.append(False)
+        # Key state tracking (16 keys)
+        self.keys = [False] * 16
         self.keyDict = {
-            49: 1,
-            50: 2,
-            51: 3,
-            52: 0xc,
-            113: 4,
-            119: 5,
-            101: 6,
-            114: 0xd,
-            97: 7,
-            115: 8,
-            100: 9,
-            102: 0xe,
-            122: 0xa,
-            120: 0,
-            99: 0xb,
-            118: 0xf
+            49: 1, 50: 2, 51: 3, 52: 0xc,
+            113: 4, 119: 5, 101: 6, 114: 0xd,
+            97: 7, 115: 8, 100: 9, 102: 0xe,
+            122: 0xa, 120: 0, 99: 0xb, 118: 0xf
         }
 
-        self.grid = []
-        for i in range(32):
-            line = []
-            for j in range(64):
-                line.append(0)
-            self.grid.append(line)
+        # Initialize the display grid (64x32)
+        self.grid = [[0 for _ in range(64)] for _ in range(32)]
         self.emptyGrid = self.grid[:]
-        self.zeroColor = [0, 0, 50]
-        self.oneColor = [255, 255, 255]
 
+        # Colors for pixels
+        self.zeroColor = [0, 0, 50]  # Background color
+        self.oneColor = [255, 255, 255]  # Foreground color
+
+        # Display setup
         self.size = 10
-        width = 64
-        height = 32
+        width, height = 64, 32
         self.screen = pygame.display.set_mode([width * self.size, height * self.size])
         self.screen.fill(self.oneColor)
         pygame.display.flip()
+
 
     def execOpcode(self, opcode):
         # print(opcode)
